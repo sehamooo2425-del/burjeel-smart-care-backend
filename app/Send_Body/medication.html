@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
+            line-height: 1.6;
+            color: #2c3e50;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            padding: 20px;
+        }
+        .container {
+            max-width: 650px;
+            margin: 0 auto;
+            background: #ffffff;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.08);
+        }
+        .header {
+            background: linear-gradient(135deg, #16a34a 0%, #15803d 100%);
+            color: #ffffff;
+            padding: 40px 30px;
+            text-align: center;
+            border-bottom: 4px solid #166534;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 28px;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+        }
+        .header p {
+            margin: 8px 0 0 0;
+            font-size: 13px;
+            opacity: 0.95;
+            font-weight: 300;
+        }
+        .content {
+            padding: 40px 30px;
+        }
+        .greeting {
+            font-size: 20px;
+            font-weight: 600;
+            color: #16a34a;
+            margin-bottom: 25px;
+        }
+        .intro-text {
+            font-size: 14px;
+            color: #666;
+            margin-bottom: 30px;
+            line-height: 1.7;
+        }
+        .medication-card {
+            background: linear-gradient(135deg, #f0fdf4 0%, #e8f5e9 100%);
+            border: 2px solid #bbf7d0;
+            border-radius: 8px;
+            padding: 25px;
+            margin: 25px 0;
+            position: relative;
+        }
+        .medication-card::before {
+            content: "💊";
+            position: absolute;
+            top: 15px;
+            right: 20px;
+            font-size: 28px;
+            opacity: 0.3;
+        }
+        .medication-card h3 {
+            color: #16a34a;
+            font-size: 16px;
+            margin-bottom: 18px;
+            font-weight: 600;
+        }
+        .detail-row {
+            display: flex;
+            margin-bottom: 14px;
+            align-items: flex-start;
+        }
+        .detail-label {
+            font-weight: 600;
+            color: #16a34a;
+            width: 140px;
+            flex-shrink: 0;
+            font-size: 14px;
+        }
+        .detail-value {
+            color: #2c3e50;
+            font-size: 14px;
+            flex: 1;
+        }
+        .reminder-note {
+            background-color: #fef3c7;
+            border-left: 4px solid #f59e0b;
+            padding: 16px;
+            margin: 25px 0;
+            border-radius: 4px;
+            font-size: 14px;
+            color: #92400e;
+            line-height: 1.7;
+        }
+        .instructions {
+            background-color: #dbeafe;
+            border-left: 4px solid #0284c7;
+            padding: 16px;
+            margin: 25px 0;
+            border-radius: 4px;
+            font-size: 14px;
+            color: #0c2d6b;
+            line-height: 1.7;
+        }
+        .action-section {
+            text-align: center;
+            margin-top: 30px;
+            padding-top: 25px;
+            border-top: 1px solid #e5e5e5;
+        }
+        .cta-text {
+            font-size: 14px;
+            color: #666;
+            margin-bottom: 16px;
+        }
+        .contact-info {
+            font-size: 13px;
+            color: #666;
+            margin-top: 15px;
+        }
+        .footer {
+            background-color: #f8f9fa;
+            padding: 25px 30px;
+            text-align: center;
+            border-top: 1px solid #e5e5e5;
+        }
+        .footer p {
+            font-size: 12px;
+            color: #999;
+            margin: 6px 0;
+            line-height: 1.6;
+        }
+        .footer .copyright {
+            font-weight: 500;
+            color: #666;
+        }
+        .footer .disclaimer {
+            font-style: italic;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Burjeel Smart Care</h1>
+            <p>Healthcare Excellence & Patient Care</p>
+        </div>
+        
+        <div class="content">
+            <div class="greeting">Hello {{patient_name}},</div>
+            
+            <p class="intro-text">
+                This is a friendly reminder about your medication schedule. Please review the details below to ensure timely compliance.
+            </p>
+            
+            <div class="medication-card">
+                <h3>Medication Reminder</h3>
+                <div class="detail-row">
+                    <span class="detail-label">Medication:</span>
+                    <span class="detail-value">{{medication_name}}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Date:</span>
+                    <span class="detail-value">{{scheduled_date}}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Time:</span>
+                    <span class="detail-value">{{time}}</span>
+                </div>
+            </div>
+            
+            <div class="reminder-note">
+                <strong>⏰ Time-Sensitive Reminder:</strong> Please ensure you take your medication as prescribed. Proper adherence to your medication schedule is essential for optimal health outcomes.
+            </div>
+            
+            <div class="instructions">
+                <strong>📌 Important Instructions:</strong><br>
+                Follow the dosage and timing instructions provided by your healthcare professional. If you experience any side effects or have concerns, contact your doctor immediately.
+            </div>
+            
+            <div class="action-section">
+                <p class="cta-text">
+                    Have questions about your medication?
+                </p>
+                <p class="contact-info">
+                    <strong>Contact Us:</strong> +968 9010 8360
+                </p>
+            </div>
+        </div>
+        
+        <div class="footer">
+            <p class="copyright">&copy; 2026 Burjeel Smart Care. All rights reserved.</p>
+            <p>Committed to your health and well-being</p>
+            <p class="disclaimer">This is an automated message, please do not reply directly to this email.</p>
+        </div>
+    </div>
+</body>
+</html>

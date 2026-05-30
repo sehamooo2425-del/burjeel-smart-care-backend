@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      color: #333333;
+      line-height: 1.6;
+    }
+
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+      padding: 20px;
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+    }
+
+    .header {
+      background-color: #2b6cb0;
+      color: #ffffff;
+      padding: 10px 20px;
+      text-align: center;
+      border-radius: 8px 8px 0 0;
+    }
+
+    .content {
+      padding: 20px;
+      background-color: #f9fbfd;
+    }
+
+    .footer {
+      text-align: center;
+      font-size: 12px;
+      color: #888888;
+      margin-top: 20px;
+    }
+
+    .highlight {
+      font-weight: bold;
+      color: #2b6cb0;
+    }
+
+    .button {
+      display: inline-block;
+      padding: 10px 20px;
+      margin-top: 20px;
+      background-color: #2b6cb0;
+      color: #ffffff;
+      text-decoration: none;
+      border-radius: 5px;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <div class="header">
+      <h2>New Chat Message</h2>
+    </div>
+    <div class="content">
+      <p>Dear {{recipient_name}},</p>
+      <p>You have received a new message on the Burjeel Smart Care platform from a <span
+          class="highlight">{{sender_role}}</span> named <span class="highlight">{{sender_name}}</span>.</p>
+      <p>You currently have <strong>{{unread_count}}</strong> unread message(s).</p>
+      <p>Please log in to your account to view and reply to your messages.</p>
+      <div style="text-align: center;">
+        <a href="https://burjeel-smart-care.vercel.app" class="button">Go to Chat</a>
+      </div>
+    </div>
+    <div class="footer">
+      <p>&copy; 2026 Burjeel Smart Care. All rights reserved.</p>
+      <p>This is an automated notification. Please do not reply to this email.</p>
+    </div>
+  </div>
+</body>
+
+</html>

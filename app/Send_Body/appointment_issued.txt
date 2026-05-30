@@ -1,0 +1,13 @@
+BURJEEL SMART CARE - Appointment Confirmed
+
+Hello {{patient_name}},
+
+Your appointment has been successfully booked!
+
+Physician: Dr. {{doctor_name}}
+Date: {{scheduled_date}}
+Time: {{time}}
+
+You will receive a reminder before your appointment. If you need to make changes, contact us: +968 9010 8360
+
+Thank you for your trust in Burjeel Smart Care.

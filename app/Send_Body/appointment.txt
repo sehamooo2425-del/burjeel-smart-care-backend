@@ -1,0 +1,11 @@
+BURJEEL SMART CARE - Appointment Reminder
+
+Hello {{patient_name}},
+
+This is a reminder of your upcoming appointment with Dr. {{doctor_name}} scheduled for {{scheduled_date}} at {{time}}.
+
+Please arrive at least 10 minutes early for check-in.
+
+If you need to reschedule or have questions, contact us: +968 9010 8360
+
+Thank you for choosing Burjeel Smart Care.

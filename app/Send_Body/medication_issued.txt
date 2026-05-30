@@ -1,0 +1,13 @@
+BURJEEL SMART CARE - Medication Prescribed
+
+Hello {{patient_name}},
+
+Your medication has been successfully prescribed and registered.
+
+Medication: {{medication_name}}
+Date: {{scheduled_date}}
+Time: {{time}}
+
+Follow all instructions carefully. Store safely and out of reach of children. For questions, contact: +968 9010 8360
+
+Thank you for your trust in Burjeel Smart Care.
