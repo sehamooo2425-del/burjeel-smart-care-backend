@@ -1,0 +1,19 @@
+name: Daily API Calls
+
+on:
+  schedule:
+    - cron: '0 3 * * *' # 07:00 Oman Time every day
+  workflow_dispatch:
+
+jobs:
+  call-apis:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Call API for reminders for today
+        run: |
+          curl -X GET "https://burjeel-smart-care-backend-c25l.onrender.com/api/v1/reminders/process-today"
+
+      - name: Call API for reminders for next 2 days
+        run: |
+          curl -X GET "https://burjeel-smart-care-backend-c25l.onrender.com/api/v1/reminders/process-upcoming"
