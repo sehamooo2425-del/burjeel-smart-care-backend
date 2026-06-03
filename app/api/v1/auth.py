@@ -288,9 +288,14 @@ async def get_current_user_info(
 async def setup_2fa(current_user: dict = Depends(get_current_active_user)):
     """
     POST /2fa/setup — Any authenticated user.
-    Generates a new 2FA secret and returns a provisioning URI that authenticator apps
-    (e.g. Google Authenticator) can scan as a QR code. Call /2fa/verify next to activate.
+    Generates a new 2FA secret and returns a provisioning URI plus a base64-encoded
+    SVG QR code that authenticator apps (e.g. Google Authenticator) can scan.
+    Call /2fa/verify next to activate.
     """
+    import io, base64
+    import qrcode
+    import qrcode.image.svg
+
     if current_user.get("two_factor_enabled"):
         raise HTTPException(status_code=400, detail="2FA is already enabled.")
 
@@ -299,9 +304,20 @@ async def setup_2fa(current_user: dict = Depends(get_current_active_user)):
     await auth_service.update_user(current_user["user_id"], {"two_factor_secret": secret})
 
     totp = pyotp.TOTP(secret)
+    # Use email if available, otherwise fall back to username — email is optional on this system.
+    account_name = current_user.get("email") or current_user.get("username", "user")
     # The provisioning URI encodes the secret in a format readable by authenticator apps.
-    provisioning_uri = totp.provisioning_uri(name=current_user["email"], issuer_name="Burjeel Smart Care")
-    return {"secret": secret, "uri": provisioning_uri}
+    provisioning_uri = totp.provisioning_uri(name=account_name, issuer_name="Burjeel Smart Care")
+
+    # Generate a QR code SVG so the frontend can display a scannable image.
+    # SvgImage uses no external dependencies beyond the qrcode package itself.
+    factory = qrcode.image.svg.SvgImage
+    img = qrcode.make(provisioning_uri, image_factory=factory)
+    buf = io.BytesIO()
+    img.save(buf)
+    qr_data_url = "data:image/svg+xml;base64," + base64.b64encode(buf.getvalue()).decode("utf-8")
+
+    return {"secret": secret, "uri": provisioning_uri, "qr_url": qr_data_url}
 
 @router.post("/2fa/verify")
 async def verify_2fa(code: str, current_user: dict = Depends(get_current_active_user)):
