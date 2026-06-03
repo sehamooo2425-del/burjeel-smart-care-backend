@@ -19,9 +19,12 @@ from datetime import datetime
 from pydantic import BaseModel
 from app.schemas.chat_message import ChatMessageCreate
 import asyncio
+import os
 from app.core.gmail_service import send_google_email
 from app.services.reminder_service import get_template
 from app.services.auth_service import get_user_by_id
+
+FRONTEND_URL = os.environ.get("FRONTEND_URL", "https://burjeel-smart-care-frontend.vercel.app/")
 
 async def send_chat_notification(sender: dict, receiver_id: int):
     """
@@ -51,7 +54,8 @@ async def send_chat_notification(sender: dict, receiver_id: int):
             recipient_name=receiver.get("username", "User"),
             sender_role=sender.get("role", "User").capitalize(),
             sender_name=sender.get("username", "Someone"),
-            unread_count=unread_count
+            unread_count=unread_count,
+            frontend_url=FRONTEND_URL,
         )
 
         await run_in_threadpool(send_google_email, [receiver["email"]], "New Chat Message - Burjeel Smart Care", email_html)

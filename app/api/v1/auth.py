@@ -10,20 +10,26 @@ Accessible by:
 - Admin only: /create-user
 """
 
-from datetime import timedelta
+from datetime import timedelta, datetime
 from fastapi import APIRouter, Depends, HTTPException, status, Request
-from app.core.security import create_access_token
+from app.core.security import create_access_token, get_password_hash
 from app.core.config import settings
 from app.core.validators import validate_password_complexity
 from app.schemas import UserCreate, AdminUserCreate, UserLogin, UserResponse, Token
 from app.services import auth_service
 from app.api.deps import get_current_active_user, RoleChecker
+from app.core.supabase import supabase
 from typing import List, Optional
 import pyotp
 import asyncio
+import random
+import string
+import os
 from fastapi.concurrency import run_in_threadpool
 from app.core.gmail_service import send_google_email
 from app.services.reminder_service import get_template
+
+FRONTEND_URL = os.environ.get("FRONTEND_URL", "https://burjeel-smart-care-frontend.vercel.app/")
 
 async def send_registration_email(user_in, user_dict):
     """Send a welcome email to a newly registered user. Silently logs and ignores any errors so a failed email never blocks registration."""
@@ -36,7 +42,8 @@ async def send_registration_email(user_in, user_dict):
             ext="html",
             user_name=getattr(user_in, "full_name", user_in.username),
             username=user_in.username,
-            password=user_in.password
+            password=user_in.password,
+            frontend_url=FRONTEND_URL,
         )
         await run_in_threadpool(send_google_email, [email], "You are registered to Burjeel Smart Care", email_html)
     except Exception as e:
@@ -50,6 +57,91 @@ async def send_registration_email(user_in, user_dict):
 # We will use dependency injection for Request.
 
 router = APIRouter()
+
+
+def _generate_temp_password(length: int = 12) -> str:
+    """
+    Generate a random temporary password that avoids visually ambiguous characters
+    (0, o, O, 1, l, I) to prevent confusion when reading from an email.
+    Guarantees at least 2 uppercase, 2 lowercase, 2 digits, and 2 symbols.
+    """
+    upper   = [c for c in string.ascii_uppercase if c not in "OI"]
+    lower   = [c for c in string.ascii_lowercase if c not in "ol"]
+    digits  = [c for c in string.digits if c not in "01"]
+    symbols = list("!@#$%&*")
+
+    # Seed with required characters first so every category is always represented.
+    pwd = (
+        random.choices(upper,   k=2) +
+        random.choices(lower,   k=2) +
+        random.choices(digits,  k=2) +
+        random.choices(symbols, k=2)
+    )
+    all_safe = upper + lower + digits + symbols
+    pwd += random.choices(all_safe, k=length - len(pwd))
+    random.shuffle(pwd)
+    return "".join(pwd)
+
+
+@router.post("/forgot-password")
+async def forgot_password(request_data: dict):
+    """
+    POST /auth/forgot-password — Public endpoint.
+    Accepts an email address, generates a temporary password, updates the user's
+    account, and sends the temporary password to that email.
+    Always returns HTTP 200 regardless of whether the email exists, so this endpoint
+    cannot be used to enumerate valid accounts.
+    """
+    email = (request_data.get("email") or "").strip().lower()
+    if not email:
+        raise HTTPException(status_code=400, detail="Email address is required.")
+
+    # Look up the account — do this silently so callers cannot probe which emails are registered.
+    user_result = await run_in_threadpool(
+        lambda: supabase.table("users")
+        .select("user_id, username, email")
+        .eq("email", email)
+        .execute()
+    )
+
+    generic_response = {"message": "If an account with that email exists, a temporary password has been sent. Check your inbox."}
+
+    if not user_result.data:
+        return generic_response  # Email not found — return success anyway for security.
+
+    user = user_result.data[0]
+    temp_password = _generate_temp_password()
+    hashed = get_password_hash(temp_password)
+
+    # Overwrite the stored password hash with the new temporary one.
+    await run_in_threadpool(
+        lambda: supabase.table("users")
+        .update({"password_hash": hashed, "updated_at": datetime.utcnow().isoformat()})
+        .eq("user_id", user["user_id"])
+        .execute()
+    )
+
+    # Send the temporary password by email — errors are swallowed so the endpoint always succeeds.
+    try:
+        email_html = get_template(
+            "forgot_password",
+            ext="html",
+            user_name=user.get("username", "User"),
+            username=user.get("username", ""),
+            temp_password=temp_password,
+            frontend_url=FRONTEND_URL,
+        )
+        await run_in_threadpool(
+            send_google_email,
+            [user["email"]],
+            "Burjeel Smart Care — Temporary Password",
+            email_html,
+        )
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).error(f"Failed to send forgot-password email: {exc}")
+
+    return generic_response
 
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)

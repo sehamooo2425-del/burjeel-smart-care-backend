@@ -8,12 +8,19 @@ their own account — they cannot change their role, status, or user_id via thes
 Accessible by: any authenticated user (all roles).
 """
 
+import os
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status
 from app.api.deps import get_current_active_user
 from app.schemas.user import UserResponse, UserUpdate
 from app.services import auth_service
 from app.core.validators import validate_password_complexity
 from app.core.security import get_password_hash, verify_password
+from app.core.gmail_service import send_google_email
+from app.services.reminder_service import get_template
+from fastapi.concurrency import run_in_threadpool
+
+FRONTEND_URL = os.environ.get("FRONTEND_URL", "https://burjeel-smart-care-frontend.vercel.app/")
 
 router = APIRouter()
 
@@ -82,6 +89,28 @@ async def update_password(
         hashed = get_password_hash(new_password)
         await auth_service.update_user(current_user["user_id"], {"password_hash": hashed})
         logger.info(f"User {current_user['username']} successfully updated their password.")
+
+        # Send a security notification so the user knows their password was changed.
+        # Errors are swallowed so a failed email never blocks the response.
+        try:
+            email = user_with_hash.get("email")
+            if email:
+                changed_at = datetime.utcnow().strftime("%B %d, %Y at %H:%M UTC")
+                email_html = get_template(
+                    "password_changed",
+                    ext="html",
+                    user_name=current_user.get("username", "User"),
+                    changed_at=changed_at,
+                    frontend_url=FRONTEND_URL,
+                )
+                await run_in_threadpool(
+                    send_google_email,
+                    [email],
+                    "Burjeel Smart Care — Your Password Was Changed",
+                    email_html,
+                )
+        except Exception as mail_err:
+            logger.error(f"Failed to send password-changed email for {current_user['username']}: {mail_err}")
 
         return {"message": "Password updated successfully."}
     except HTTPException:

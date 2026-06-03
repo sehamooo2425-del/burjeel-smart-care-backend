@@ -10,7 +10,7 @@ A REST API and WebSocket server for the Burjeel Smart Care patient management sy
 |---|---|
 | Web Framework | FastAPI |
 | ASGI Server | Uvicorn |
-| Database | Supabase (PostgreSQL via Supabase Python SDK) |
+| Database | Supabase (PostgreSQL via Supabase Python SDK v2) |
 | Auth | JWT tokens (`python-jose`) + bcrypt password hashing |
 | 2FA | TOTP via `pyotp` (Google Authenticator compatible) |
 | SMS | TextBee API (via `httpx`) |
@@ -30,15 +30,15 @@ app/
 ├── api/
 │   ├── deps.py              # Shared dependencies: get current user, role checker, WebSocket auth
 │   └── v1/                  # All API endpoints, grouped by topic
-│       ├── auth.py          # Register, login, 2FA setup/verify, list users
+│       ├── auth.py          # Register, login, forgot-password, 2FA setup/verify, list users
 │       ├── patients.py      # Create, read, update, delete patient records
 │       ├── reminders.py     # Schedule reminders, send SMS/email, process due reminders
-│       ├── attendance.py    # Mark and retrieve patient attendance
+│       ├── attendance.py    # Mark, retrieve, update, and delete patient attendance
 │       ├── reports.py       # Attendance and reminder summary statistics
 │       ├── chat.py          # WebSocket real-time chat + REST message history
 │       ├── unified_reminders.py # Send SMS + email together in one request
-│       ├── users.py         # Admin: edit/delete any user, reset passwords
-│       └── profile.py       # Self-service: update own profile, change password, upload avatar
+│       ├── users.py         # Admin: edit/delete any user
+│       └── profile.py       # Self-service: update own profile, change password (+ email alert), upload avatar
 │
 ├── core/
 │   ├── config.py            # Reads all settings from the .env file
@@ -53,7 +53,6 @@ app/
 │   ├── reminder.py
 │   ├── attendance.py
 │   ├── chat_message.py
-│   ├── sms_log.py
 │   ├── doctor.py
 │   └── unified_reminder.py
 │
@@ -89,33 +88,55 @@ docker-compose.yml           # Runs backend (and frontend) together
 1. A request arrives at a route in `app/api/v1/`.
 2. FastAPI runs the **dependency** from `app/api/deps.py` — this decodes the JWT token and loads the current user.
 3. `RoleChecker` verifies the user's role is allowed for that endpoint.
-4. The route handler calls a **service** function that contains the business logic.
-5. The service calls **Supabase** to read or write data.
-6. The response is serialised through a **Pydantic schema** and returned as JSON.
+4. The route handler calls a **service** function (or queries Supabase directly) containing the business logic.
+5. The response is serialised through a **Pydantic schema** and returned as JSON.
 
 ### Authentication
 - `POST /api/v1/auth/login` — returns a JWT access token (valid 30 minutes by default).
 - Every protected endpoint requires `Authorization: Bearer <token>` in the request header.
 - Tokens are verified in `app/api/deps.py` using the secret key from `.env`.
 - Optional TOTP 2FA: users can enable it via `/auth/2fa/setup` and `/auth/2fa/verify`.
+- Users can change their own password via `PUT /api/v1/profile/password` (no admin required). A security email is sent after every successful change.
+- **Forgot password**: `POST /api/v1/auth/forgot-password` is a public endpoint (no token required). It accepts `{"email": "..."}`, generates a temporary password, updates the account, and emails the temporary password. Always returns HTTP 200 regardless of whether the email exists (prevents account enumeration). The temporary password excludes visually ambiguous characters (0, o, O, 1, l, I).
 
 ### Roles
 | Role | Access |
 |---|---|
 | `admin` | Everything |
-| `doctor` | Patients, reminders, attendance, reports, chat |
+| `doctor` | Patients, reminders, attendance (own appointments only), reports, chat |
 | `patient` | Own profile, own reminders, chat |
+
+### Attendance Rules
+`POST /api/v1/attendance/` enforces the following in order:
+
+1. **Patient must exist** — 404 if not found.
+2. **`reminder_id` is required** — the caller must specify exactly which appointment is being marked; 400 if omitted.
+3. **Reminder validation** — the reminder must exist, belong to the given patient, and be of type `doctor_visit`; its `scheduled_date` must fall on the given `appointment_date` (UTC day boundary comparison).
+4. **Doctor restriction** — if the caller is a doctor, `reminder.display_name` must match their `username`; 403 otherwise.
+5. **No double-marking** — if any attendance record already references this `reminder_id`, the request is rejected with 409.
 
 ### Notifications
 - **SMS**: sent via TextBee API (`app/services/sms_service.py`).
 - **Email**: sent via a Google Apps Script webhook (`app/core/gmail_service.py`). Templates are HTML files in `app/Send_Body/`.
 - Reminders are processed by hitting `GET /api/v1/reminders/process-upcoming` — this endpoint is intentionally unauthenticated so a cron job can call it.
 
+**Email templates in `app/Send_Body/`:**
+
+| File | Sent when |
+|---|---|
+| `user_registered.html` | A new account is created |
+| `forgot_password.html` | User requests a password reset — contains the temporary password |
+| `password_changed.html` | User successfully changes their password — security alert with timestamp |
+| `appointment.html/.txt` | Appointment reminder is due |
+| `appointment_issued.html/.txt` | A new appointment reminder is created |
+| `medication.html/.txt` | Medication reminder is due |
+| `medication_issued.html/.txt` | A new medication reminder is created |
+
 ### Real-time Chat
 - Clients connect to `ws://<host>/api/v1/chat/ws/{user_id}?token=<jwt>`.
 - The server keeps a dictionary of active connections and broadcasts messages to the right recipient.
 - Message history is stored in the `chat_messages` Supabase table.
-- `is_read` starts as `False` on every message. The frontend calls `PUT /api/v1/chat/messages/read` (with the sender's ID) whenever a conversation is opened, which flips `is_read` to `True` for all unread messages in that thread. The unread badge count is updated in the UI immediately without waiting for the next API poll.
+- `is_read` starts as `False` on every message. The frontend calls `PUT /api/v1/chat/messages/read` (with the sender's ID) whenever a conversation is opened, which flips `is_read` to `True` for all unread messages in that thread.
 
 ---
 
@@ -127,7 +148,7 @@ docker-compose.yml           # Runs backend (and frontend) together
 | `patients` | Extended patient profile linked to a user |
 | `doctors` | Extended doctor profile linked to a user |
 | `reminders` | Scheduled medication / appointment reminders |
-| `attendance` | Whether a patient attended their appointment |
+| `attendance` | Whether a patient attended their appointment, linked to a specific reminder |
 | `chat_messages` | Chat messages between users |
 
 ---
@@ -231,28 +252,33 @@ CREATE TABLE doctors (
 );
 
 -- Reminders: scheduled SMS/email notifications for patients
+-- reminder_type: 'medication' or 'doctor_visit'
+-- display_name: medication name (for medication) or doctor's username (for doctor_visit)
 CREATE TABLE reminders (
-    reminder_id     SERIAL PRIMARY KEY,
-    patient_id      INTEGER NOT NULL REFERENCES patients(patient_id) ON DELETE CASCADE,
-    reminder_type   VARCHAR(50),
-    message         TEXT,
-    scheduled_date  DATE NOT NULL,
-    sent_status     VARCHAR(10) NOT NULL DEFAULT 'pending' CHECK (sent_status IN ('pending','sent','failed')),
-    success_sent    INTEGER DEFAULT 0,
-    failed_sent     INTEGER DEFAULT 0,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at      TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    created_by      INTEGER REFERENCES users(user_id)
+    reminder_id      SERIAL PRIMARY KEY,
+    patient_id       INTEGER NOT NULL REFERENCES patients(patient_id) ON DELETE CASCADE,
+    reminder_type    VARCHAR(50) NOT NULL CHECK (reminder_type IN ('medication','doctor_visit')),
+    display_name     VARCHAR(100),
+    message_template TEXT,
+    scheduled_date   TIMESTAMPTZ NOT NULL,
+    success_sent     INTEGER DEFAULT 0,
+    failed_sent      INTEGER DEFAULT 0,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at       TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_by       INTEGER REFERENCES users(user_id)
 );
 
 -- Attendance: records whether a patient came to their appointment
+-- Each row is tied to a specific reminder (one attendance per appointment).
 CREATE TABLE attendance (
     attendance_id    SERIAL PRIMARY KEY,
+    reminder_id      INTEGER REFERENCES reminders(reminder_id),
     patient_id       INTEGER NOT NULL REFERENCES patients(patient_id) ON DELETE CASCADE,
     appointment_date DATE NOT NULL,
     status           VARCHAR(10) NOT NULL CHECK (status IN ('present','absent','late')),
-    notes            TEXT,
     marked_by        INTEGER REFERENCES users(user_id),
+    created_by       INTEGER REFERENCES users(user_id),
+    timestamp        TIMESTAMPTZ,
     created_at       TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at       TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -273,6 +299,7 @@ CREATE INDEX idx_patients_user_id     ON patients(user_id);
 CREATE INDEX idx_reminders_patient    ON reminders(patient_id);
 CREATE INDEX idx_reminders_date       ON reminders(scheduled_date);
 CREATE INDEX idx_attendance_patient   ON attendance(patient_id);
+CREATE INDEX idx_attendance_reminder  ON attendance(reminder_id);
 CREATE INDEX idx_chat_sender          ON chat_messages(sender_id);
 CREATE INDEX idx_chat_receiver        ON chat_messages(receiver_id);
 ```
