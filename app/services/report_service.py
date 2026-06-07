@@ -42,18 +42,17 @@ async def get_attendance_report(
     result = await run_in_threadpool(lambda: query.execute())
     data = result.data
 
-    report = {"came": 0, "not came": 0}
+    report = {"present": 0, "absent": 0, "late": 0}
     for item in data:
         status = item.get("status")
         if status in report:
             report[status] += 1
 
     total = sum(report.values())
-    # Guard against division by zero when no attendance records exist in the date range.
-    attendance_rate = (report["came"] / total * 100) if total > 0 else 0
+    # "present" and "late" both count as attended for the rate calculation.
+    attended = report["present"] + report["late"]
+    attendance_rate = (attended / total * 100) if total > 0 else 0
 
-    # The ** operator unpacks the report dict so 'came' and 'not came' appear at the
-    # top level of the returned dict alongside the computed summary fields.
     return {
         **report,
         "total_attendances": total,

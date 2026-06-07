@@ -11,3 +11,13 @@ Time: {{time}}
 You will receive a reminder before your appointment. If you need to make changes, contact us: +968 9010 8360
 
 Thank you for your trust in Burjeel Smart Care.
+
+now in settings page, there are two preferences i.e. notification for Email and SMS, 
+lets categorize emails, 
+chat_notification.html (All Users), appointment_issued.html, appointment.html, medication_issued.html, medication.html are email notifications 
+while appointment_issued.txt, appointment.txt, medication_issued.txt, medication.txt are SMS notification
+There must be atleast one of those two pereferences always turned on or both turned on (for patients).
+for admins and doctors that preference must only be shown as emails (not editable and turned on)
+user gets notifications as he prefers
+emails other than mentioned here are not notification emails hence they must always stay functional, whether they have preference or not.
+Make a detailed plan for this; and try to change minimum code

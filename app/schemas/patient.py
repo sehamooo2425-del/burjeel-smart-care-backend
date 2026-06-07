@@ -33,7 +33,7 @@ class PatientCreate(PatientBase):
     their user account at the same time.
     """
     username: str
-    email: str
+    email: Optional[str] = None  # Email is optional — omit or send null/empty to skip.
     password: str  # Plain-text — will be hashed by the service layer before storage.
 
 

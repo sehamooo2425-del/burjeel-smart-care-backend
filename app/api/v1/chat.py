@@ -36,6 +36,12 @@ async def send_chat_notification(sender: dict, receiver_id: int):
         if not receiver or not receiver.get("email"):
             return
 
+        # Admins and doctors always receive chat email notifications.
+        # Patients only receive them if their email preference is enabled.
+        prefs = receiver.get("notification_preferences") or {}
+        if receiver.get("role") == "patient" and not prefs.get("email", True):
+            return
+
         # Count how many unread messages the receiver currently has so we can show it in the email.
         result = await run_in_threadpool(
             lambda: supabase.table("chat_messages")
@@ -181,12 +187,11 @@ async def get_user_conversations(
     Conversations are sorted newest-first; users with no messages appear at the end.
     """
     # Fetch every user except the currently logged-in one to build the contact list.
-    all_users_result = await run_in_threadpool(
-        lambda: supabase.table("users")
-        .select("user_id, username, role, account_status")
-        .neq("user_id", current_user["user_id"])
-        .execute()
-    )
+    # Patients may only message staff (admins and doctors), not other patients.
+    query = supabase.table("users").select("user_id, username, role, account_status, profile_picture_url").neq("user_id", current_user["user_id"])
+    if current_user["role"] == "patient":
+        query = query.in_("role", ["admin", "doctor"])
+    all_users_result = await run_in_threadpool(lambda: query.execute())
 
     if not all_users_result.data:
         return []
@@ -298,6 +303,41 @@ async def create_chat_message(
         # Fire the email notification asynchronously so the API response is not delayed.
         asyncio.create_task(send_chat_notification(current_user, message_in.receiver_id))
     return db_message
+
+
+@router.patch("/messages/{message_id}/delete", response_model=ChatMessageResponse)
+async def delete_chat_message(
+    message_id: int,
+    current_user: dict = Depends(get_current_active_user)
+):
+    """
+    PATCH /chat/messages/{message_id}/delete — Any authenticated user.
+    Soft-deletes a message by setting is_deleted = True. Both the sender and the
+    receiver are allowed to delete. The record is kept in the DB so the other
+    participant sees 'This message was deleted' instead of a missing bubble.
+    """
+    from fastapi import HTTPException
+    msg_result = await run_in_threadpool(
+        lambda: supabase.table("chat_messages")
+        .select("message_id, sender_id, receiver_id")
+        .eq("message_id", message_id)
+        .execute()
+    )
+    if not msg_result.data:
+        raise HTTPException(status_code=404, detail="Message not found")
+
+    msg = msg_result.data[0]
+    uid = current_user["user_id"]
+    if msg["sender_id"] != uid:
+        raise HTTPException(status_code=403, detail="You can only delete your own messages")
+
+    result = await run_in_threadpool(
+        lambda: supabase.table("chat_messages")
+        .update({"is_deleted": True, "updated_at": datetime.utcnow().isoformat()})
+        .eq("message_id", message_id)
+        .execute()
+    )
+    return result.data[0] if result.data else {}
 
 
 class MarkReadRequest(BaseModel):

@@ -68,20 +68,45 @@ async def admin_delete_user(
 ):
     """
     DELETE /users/{user_id} — Admin only.
-    Permanently removes the user account. Related rows (patient profile, etc.) are removed
-    automatically if cascade delete is configured in the database schema.
+    Removes the user and all their related data in FK-safe order.
+    The DB does not have CASCADE DELETE on all FK constraints, so child rows
+    (attendance, reminders, patient/doctor profile, chat messages) are deleted
+    manually before the users row is removed.
     """
+    from app.core.supabase import supabase
+    from fastapi.concurrency import run_in_threadpool
+
+    user_result = await run_in_threadpool(
+        lambda: supabase.table("users").select("user_id, role").eq("user_id", user_id).execute()
+    )
+    if not user_result.data:
+        raise HTTPException(status_code=404, detail="User not found")
+    role = user_result.data[0]["role"]
+
     try:
-        from app.core.supabase import supabase
-        from fastapi.concurrency import run_in_threadpool
-        # Deleting from the users table; cascade rules in the DB handle linked rows.
+        if role == "patient":
+            p = await run_in_threadpool(
+                lambda: supabase.table("patients").select("patient_id").eq("user_id", user_id).execute()
+            )
+            if p.data:
+                pid = p.data[0]["patient_id"]
+                await run_in_threadpool(lambda: supabase.table("attendance").delete().eq("patient_id", pid).execute())
+                await run_in_threadpool(lambda: supabase.table("reminders").delete().eq("patient_id", pid).execute())
+                await run_in_threadpool(lambda: supabase.table("patients").delete().eq("patient_id", pid).execute())
+        elif role == "doctor":
+            await run_in_threadpool(lambda: supabase.table("doctors").delete().eq("user_id", user_id).execute())
+
+        # Chat messages reference user_id for any role.
+        await run_in_threadpool(lambda: supabase.table("chat_messages").delete().eq("sender_id", user_id).execute())
+        await run_in_threadpool(lambda: supabase.table("chat_messages").delete().eq("receiver_id", user_id).execute())
+
         await run_in_threadpool(lambda: supabase.table("users").delete().eq("user_id", user_id).execute())
 
-        logger.info(f"Admin {current_user['user_id']} successfully deleted user {user_id}.")
+        logger.info(f"Admin {current_user['user_id']} deleted user {user_id} (role: {role}).")
         return {"message": "User deleted successfully."}
     except Exception as e:
-        logger.error(f"System Error: Admin {current_user['user_id']} failed to delete user {user_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail="System Error: Failed to delete user.")
+        logger.error(f"Admin {current_user['user_id']} failed to delete user {user_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to delete user.")
 
 @router.post("/{user_id}/reset-password")
 async def admin_reset_password(

@@ -91,34 +91,48 @@ async def send_unified_email(email: str, subject: str, body: str) -> Tuple[bool,
         logger.error(f"Email failed after retries: {str(e)}")
         return False, str(e)
 
-async def process_unified_reminder(request: UnifiedReminderRequest) -> UnifiedReminderResponse:
+async def process_unified_reminder(
+    request: UnifiedReminderRequest,
+    send_email: bool = True,
+    send_sms: bool = True,
+) -> UnifiedReminderResponse:
     """
-    Dispatch a reminder notification over both SMS and email at the same time,
+    Dispatch a reminder notification over SMS and/or email based on the caller's flags,
     and return a combined result object describing the outcome of each channel.
 
     Parameters:
-        request: A UnifiedReminderRequest holding the phone number, email address,
-                 SMS text, HTML email body, and subject line.
+        request:     A UnifiedReminderRequest holding contact details and message bodies.
+        send_email:  Whether to send the email channel (default True).
+        send_sms:    Whether to send the SMS channel (default True).
 
     Returns:
-        A UnifiedReminderResponse with per-channel status and an overall success flag.
+        A UnifiedReminderResponse with per-channel status. Skipped channels are marked
+        successful so they do not count against overall_success.
     """
-    # Use the rich HTML email body when available; fall back to the plain SMS text otherwise.
     email_body = request.email_content if request.email_content else request.message_content
 
-    # asyncio.create_task schedules both coroutines to run concurrently on the event loop.
-    # This means the SMS and email are sent in parallel rather than one after the other,
-    # which cuts the total wait time roughly in half.
-    sms_task = asyncio.create_task(send_unified_sms(request.phone_number, request.message_content))
-    email_task = asyncio.create_task(send_unified_email(request.email_address, request.subject, email_body))
+    skipped = ServiceStatus(success=True, message="Skipped per user preference")
 
-    # Await each task individually so we can capture both results even if one fails.
-    sms_success, sms_msg = await sms_task
-    email_success, email_msg = await email_task
+    # Only create tasks for enabled channels that also have valid contact info.
+    if send_sms and request.phone_number:
+        sms_task = asyncio.create_task(send_unified_sms(request.phone_number, request.message_content))
+    else:
+        sms_task = None
+        if send_sms and not request.phone_number:
+            logger.warning("SMS skipped: no phone number available")
+
+    if send_email and request.email_address:
+        email_task = asyncio.create_task(send_unified_email(request.email_address, request.subject, email_body))
+    else:
+        email_task = None
+        if send_email and not request.email_address:
+            logger.warning("Email skipped: no email address available")
+
+    sms_success,   sms_msg   = (await sms_task)   if sms_task   else (True, "Skipped")
+    email_success, email_msg = (await email_task) if email_task else (True, "Skipped")
 
     return UnifiedReminderResponse(
         sms_status=ServiceStatus(success=sms_success, message=sms_msg),
         email_status=ServiceStatus(success=email_success, message=email_msg),
-        # overall_success is True only when BOTH channels delivered successfully.
-        overall_success=sms_success and email_success
+        overall_success=sms_success and email_success,
     )

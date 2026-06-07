@@ -35,10 +35,12 @@ async def create_patient(
             detail="Username already registered"
         )
 
-    # Build a standard UserCreate object so we can reuse the auth service to make the login account.
+    # Treat an empty string the same as no email — UserCreate's EmailStr validator
+    # rejects "" so we must convert it to None before constructing the object.
+    email = patient_in.email if patient_in.email and patient_in.email.strip() else None
     user_in = UserCreate(
         username=patient_in.username,
-        email=patient_in.email,
+        email=email,
         password=patient_in.password,
         role="patient"
     )
@@ -145,29 +147,37 @@ async def update_patient(
 @router.delete("/{patient_id}")
 async def delete_patient(
     patient_id: int,
-    # Deleting patients is a destructive action restricted to admins only.
     current_user: dict = Depends(RoleChecker(["admin"]))
 ):
     """
     DELETE /patients/{patient_id} — Admin only.
-    Deletes the patient's login account from the users table; the patients row is
-    removed automatically if the database has a cascade delete rule configured.
+    Removes the patient and their login account in FK-safe order:
+    attendance → reminders → chat messages → patients → users.
+    The database FK constraints do not have CASCADE DELETE, so we must
+    delete child rows manually before removing the parent rows.
     """
     from app.core.supabase import supabase
     from fastapi.concurrency import run_in_threadpool
 
-    # First get the user_id so we can delete the core user account too if needed
     result = await run_in_threadpool(
-        lambda: supabase.table("patients").select("*").eq("patient_id", patient_id).execute()
+        lambda: supabase.table("patients").select("patient_id, user_id").eq("patient_id", patient_id).execute()
     )
     patient = result.data[0] if result.data else None
     if not patient:
         raise HTTPException(status_code=404, detail="Patient not found")
 
-    # Delete the user account which will cascade to patient if configured,
-    # but we'll do both to be safe
-    await run_in_threadpool(
-        lambda: supabase.table("users").delete().eq("user_id", patient["user_id"]).execute()
-    )
+    uid = patient["user_id"]
+
+    # 1. Attendance records reference patient_id.
+    await run_in_threadpool(lambda: supabase.table("attendance").delete().eq("patient_id", patient_id).execute())
+    # 2. Reminders reference patient_id.
+    await run_in_threadpool(lambda: supabase.table("reminders").delete().eq("patient_id", patient_id).execute())
+    # 3. Chat messages reference user_id (as sender or receiver).
+    await run_in_threadpool(lambda: supabase.table("chat_messages").delete().eq("sender_id", uid).execute())
+    await run_in_threadpool(lambda: supabase.table("chat_messages").delete().eq("receiver_id", uid).execute())
+    # 4. Patient profile row.
+    await run_in_threadpool(lambda: supabase.table("patients").delete().eq("patient_id", patient_id).execute())
+    # 5. User account — safe to delete now that all child rows are gone.
+    await run_in_threadpool(lambda: supabase.table("users").delete().eq("user_id", uid).execute())
 
     return {"message": "Patient deleted successfully"}

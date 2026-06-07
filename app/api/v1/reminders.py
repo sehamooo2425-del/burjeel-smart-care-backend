@@ -196,11 +196,15 @@ async def send_reminder(
     email = user.get("email") if user else None
     phone = patient_data.get("phone_number")
 
-    if not phone or not email:
-        raise HTTPException(
-            status_code=400,
-            detail="Patient missing phone number or email for notification"
-        )
+    prefs      = (user.get("notification_preferences") or {}) if user else {}
+    pref_email = prefs.get("email", True)
+    pref_sms   = prefs.get("sms",   True)
+
+    # Fail only when every channel the patient has enabled lacks the required contact info.
+    if (pref_email and not email) and (pref_sms and not phone):
+        raise HTTPException(status_code=400, detail="Patient has no reachable contact info for any enabled notification channel")
+    if not pref_email and not pref_sms:
+        raise HTTPException(status_code=400, detail="Patient has all notifications disabled")
 
     reminder_type = reminder.get("reminder_type", "medication")
 
@@ -264,8 +268,8 @@ async def send_reminder(
         subject=subject
     )
 
-    # Send via both SMS (Twilio) and email (Gmail) through the unified service.
-    response = await process_unified_reminder(request)
+    # Send only over the channels the patient has enabled.
+    response = await process_unified_reminder(request, send_email=pref_email, send_sms=pref_sms)
 
     # Track how many times notifications have succeeded or failed for this reminder.
     current_success = reminder.get("success_sent") or 0

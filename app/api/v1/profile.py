@@ -42,6 +42,18 @@ async def update_profile(
     for key in ["role", "account_status", "user_id"]:
         update_data.pop(key, None)
 
+    if "notification_preferences" in update_data:
+        prefs = update_data["notification_preferences"] or {}
+        if current_user["role"] == "patient":
+            if not prefs.get("email", False) and not prefs.get("sms", False):
+                raise HTTPException(
+                    status_code=400,
+                    detail="At least one notification channel (Email or SMS) must remain enabled."
+                )
+        else:
+            # Admins and doctors always have email on; SMS preference is not applicable.
+            update_data["notification_preferences"] = {"email": True, "sms": False}
+
     updated_user = await auth_service.update_user(current_user["user_id"], update_data)
     return updated_user
 

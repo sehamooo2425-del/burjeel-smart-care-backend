@@ -160,9 +160,20 @@ async def _process_reminders(start_dt: datetime, end_dt: datetime) -> Dict[str, 
             
         email = user.get("email") if user else None
         phone = patient.get("phone_number")
-        
-        if not phone or not email:
-            logger.warning(f"Reminder {reminder_id} skipped: missing phone ({phone}) or email ({email})")
+
+        # Read preferences before deciding whether we have enough contact info to proceed.
+        prefs = (user.get("notification_preferences") or {}) if user else {}
+        pref_email = prefs.get("email", True)
+        pref_sms   = prefs.get("sms",   True)
+
+        # Skip only when every enabled channel lacks the required contact info.
+        email_blocked = pref_email and not email
+        sms_blocked   = pref_sms   and not phone
+        if email_blocked and sms_blocked:
+            logger.warning(f"Reminder {reminder_id} skipped: no reachable channel (email={email}, phone={phone})")
+            continue
+        if not pref_email and not pref_sms:
+            logger.warning(f"Reminder {reminder_id} skipped: patient has all notifications disabled")
             continue
             
         logger.debug(f"Processing reminder {reminder_id} for patient {patient.get('patient_id')}")
@@ -226,9 +237,9 @@ async def _process_reminders(start_dt: datetime, end_dt: datetime) -> Dict[str, 
         except Exception as e:
             logger.error(f"Validation failed for reminder {reminder_id}: {str(e)}")
             continue
-        
-        # Send notifications
-        response = await process_unified_reminder(request)
+
+        # Send notifications only over channels the patient has enabled.
+        response = await process_unified_reminder(request, send_email=pref_email, send_sms=pref_sms)
         
         # Update reminder status
         current_success = reminder.get("success_sent") or 0
@@ -346,6 +357,10 @@ async def send_issue_notification(reminder: dict, patient: dict, user: dict):
         reminder_details=details
     )
     
+    prefs = (user.get("notification_preferences") or {})
+    pref_email = prefs.get("email", True)
+    pref_sms   = prefs.get("sms",   True)
+
     try:
         request = UnifiedReminderRequest(
             phone_number=phone,
@@ -354,7 +369,7 @@ async def send_issue_notification(reminder: dict, patient: dict, user: dict):
             email_content=email_html,
             subject=subject
         )
-        await process_unified_reminder(request)
+        await process_unified_reminder(request, send_email=pref_email, send_sms=pref_sms)
     except Exception as e:
         logger.error(f"Failed to send issue notification for reminder {reminder.get('reminder_id')}: {str(e)}")
 

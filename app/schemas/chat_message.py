@@ -54,6 +54,7 @@ class ChatMessageResponse(ChatMessageBase):
     sender_id: int     # user_id of the user who sent the message (set server-side from the token).
     timestamp: datetime  # Exact date and time the message was created.
     is_read: bool        # False by default; flipped to True when the recipient reads it.
+    is_deleted: bool = False  # True when either participant soft-deletes the message.
     created_at: datetime
     updated_at: datetime
 
